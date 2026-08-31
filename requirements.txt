@@ -1,5 +1,6 @@
-```text
+
 streamlit
+numpy
 pandas
+sciket-learn
 openpyxl
-```
