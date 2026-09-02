@@ -1,3 +1,8 @@
+# ============================================================
+# PERSONALIZED LEARNING RECOMMENDATION SYSTEM
+# Streamlit + KNN
+# ============================================================
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,9 +13,9 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.pipeline import Pipeline
 
 
-# =========================================================
-# PAGE SETTINGS
-# =========================================================
+# ============================================================
+# PAGE CONFIGURATION
+# ============================================================
 
 st.set_page_config(
     page_title="Personalized Learning Recommendation",
@@ -19,754 +24,507 @@ st.set_page_config(
 )
 
 
-# =========================================================
+# ============================================================
 # CUSTOM CSS
-# =========================================================
+# ============================================================
 
 st.markdown("""
 <style>
 
 .main {
-    background-color: #f5f3fa;
+    background-color: #f8f9fa;
 }
 
-.title-box {
-    background-color: #d7b4df;
-    padding: 18px;
-    border-radius: 10px;
+.title {
+    font-size: 42px;
+    font-weight: 700;
     text-align: center;
+    margin-bottom: 5px;
 }
 
-.title-box h1 {
-    color: #30243b;
-    margin: 0;
+.subtitle {
+    text-align: center;
+    color: #666666;
+    font-size: 18px;
+    margin-bottom: 30px;
 }
 
 .card {
-    background-color: white;
     padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0px 3px 10px rgba(0,0,0,0.15);
-    margin-bottom: 15px;
-}
-
-.path {
+    border-radius: 15px;
     background-color: white;
-    padding: 18px;
-    border-radius: 10px;
-    border-left: 6px solid #7b3f98;
-    margin-bottom: 12px;
-    box-shadow: 0px 2px 8px rgba(0,0,0,0.10);
+    border: 1px solid #eeeeee;
+    margin-bottom: 15px;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
 
-# =========================================================
+# ============================================================
 # TITLE
-# =========================================================
+# ============================================================
 
-st.markdown("""
-<div class="title-box">
-<h1>🎓 PERSONALIZED LEARNING RECOMMENDATION SYSTEM</h1>
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    '<div class="title">🎓 Personalized Learning Recommendation System</div>',
+    unsafe_allow_html=True
+)
 
-st.write("")
-
-st.write(
-    "ML-based system that finds students with similar learning profiles "
-    "and generates a personalized learning path."
+st.markdown(
+    '<div class="subtitle">Machine Learning based personalized learning guidance using K-Nearest Neighbors</div>',
+    unsafe_allow_html=True
 )
 
 
-# =========================================================
-# LOAD DATA
-# =========================================================
+# ============================================================
+# LOAD DATASET
+# ============================================================
 
-@st.cache_data
-def load_data():
+FILE_NAME = "PLR 3 FINAL.xlsx"
 
-    data = pd.read_excel("PLR 3.xlsx")
-
-    return data
-
-
-df = load_data()
+try:
+    df = pd.read_excel(FILE_NAME)
+except Exception as e:
+    st.error(f"❌ Unable to load dataset: {e}")
+    st.stop()
 
 
-# =========================================================
-# CLEAN DATA
-# =========================================================
+# ============================================================
+# CLEAN COLUMN NAMES
+# ============================================================
 
-df = df.drop_duplicates()
-
-df["Year"] = pd.to_numeric(
-    df["Year"],
-    errors="coerce"
-)
-
-df["CGPA"] = pd.to_numeric(
-    df["CGPA"],
-    errors="coerce"
-)
-
-df["Assessment Score"] = pd.to_numeric(
-    df["Assessment Score"],
-    errors="coerce"
-)
-
-df["Time Available (hrs/day)"] = pd.to_numeric(
-    df["Time Available (hrs/day)"],
-    errors="coerce"
-)
-
-df["Attendance (%)"] = pd.to_numeric(
-    df["Attendance (%)"],
-    errors="coerce"
-)
-
-df = df.dropna()
+df.columns = df.columns.str.strip()
 
 
-# =========================================================
-# DASHBOARD METRICS
-# =========================================================
+# ============================================================
+# CHECK REQUIRED COLUMNS
+# ============================================================
 
-col1, col2, col3, col4, col5 = st.columns(5)
+required_columns = [
+    "Student ID",
+    "Student Name",
+    "College",
+    "Branch",
+    "Year",
+    "CGPA",
+    "Learning History",
+    "Skill Gap"
+]
 
-with col1:
-    st.metric(
-        "Total Students",
-        len(df)
+missing_columns = [
+    col for col in required_columns
+    if col not in df.columns
+]
+
+if missing_columns:
+    st.error(
+        "❌ These columns are missing from the Excel file: "
+        + ", ".join(missing_columns)
     )
-
-with col2:
-    st.metric(
-        "Average CGPA",
-        round(df["CGPA"].mean(), 2)
-    )
-
-with col3:
-    st.metric(
-        "Assessment",
-        round(df["Assessment Score"].mean(), 2)
-    )
-
-with col4:
-    st.metric(
-        "Attendance",
-        f'{df["Attendance (%)"].mean():.1f}%'
-    )
-
-with col5:
-    st.metric(
-        "Study Hours",
-        round(
-            df["Time Available (hrs/day)"].mean(),
-            2
-        )
-    )
+    st.write("Available columns:", list(df.columns))
+    st.stop()
 
 
-# =========================================================
-# ML FEATURES
-# =========================================================
+# ============================================================
+# DATA CLEANING
+# ============================================================
+
+df = df.copy()
+
+df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+df["CGPA"] = pd.to_numeric(df["CGPA"], errors="coerce")
+
+df["Year"] = df["Year"].fillna(df["Year"].median())
+df["CGPA"] = df["CGPA"].fillna(df["CGPA"].median())
+
+text_columns = [
+    "College",
+    "Branch",
+    "Learning History",
+    "Skill Gap"
+]
+
+for col in text_columns:
+    df[col] = df[col].fillna("Unknown").astype(str)
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+st.sidebar.header("🎯 Student Profile")
+
+student_name = st.sidebar.text_input(
+    "Student Name",
+    value="New Student"
+)
+
+college = st.sidebar.selectbox(
+    "College",
+    sorted(df["College"].unique())
+)
+
+branch = st.sidebar.selectbox(
+    "Branch",
+    sorted(df["Branch"].unique())
+)
+
+year = st.sidebar.number_input(
+    "Year",
+    min_value=1,
+    max_value=6,
+    value=1
+)
+
+cgpa = st.sidebar.number_input(
+    "CGPA",
+    min_value=0.0,
+    max_value=10.0,
+    value=7.5,
+    step=0.1
+)
+
+learning_history = st.sidebar.text_input(
+    "Learning History",
+    value="Python, statistics, ML basics"
+)
+
+skill_gap = st.sidebar.text_input(
+    "Skill Gap",
+    value="Machine Learning"
+)
+
+
+# ============================================================
+# MACHINE LEARNING FEATURES
+# ============================================================
 
 features = [
-
     "College",
     "Branch",
     "Year",
     "CGPA",
     "Learning History",
-    "Skill Gap",
-    "Career Goal",
-    "Assessment Score",
-    "Time Available (hrs/day)",
-    "Attendance (%)",
-    "Requirement Type",
-    "Current Level"
-
+    "Skill Gap"
 ]
 
+X = df[features]
+
+
+# ============================================================
+# PREPROCESSING
+# ============================================================
 
 categorical_features = [
-
     "College",
     "Branch",
     "Learning History",
-    "Skill Gap",
-    "Career Goal",
-    "Requirement Type",
-    "Current Level"
-
+    "Skill Gap"
 ]
-
 
 numeric_features = [
-
     "Year",
-    "CGPA",
-    "Assessment Score",
-    "Time Available (hrs/day)",
-    "Attendance (%)"
-
+    "CGPA"
 ]
 
 
-# =========================================================
-# PREPROCESSING
-# =========================================================
+# Handle different scikit-learn versions
+try:
+    encoder = OneHotEncoder(
+        handle_unknown="ignore",
+        sparse_output=False
+    )
+except TypeError:
+    encoder = OneHotEncoder(
+        handle_unknown="ignore",
+        sparse=False
+    )
+
 
 preprocessor = ColumnTransformer(
-
     transformers=[
-
-        (
-            "categorical",
-
-            OneHotEncoder(
-                handle_unknown="ignore"
-            ),
-
-            categorical_features
-        ),
-
-        (
-            "numeric",
-
-            StandardScaler(),
-
-            numeric_features
-        )
-
+        ("categorical", encoder, categorical_features),
+        ("numeric", StandardScaler(), numeric_features)
     ]
-
 )
 
 
-# =========================================================
-# KNN MODEL
-# =========================================================
+# ============================================================
+# TRAIN KNN MODEL
+# ============================================================
 
-knn_model = Pipeline(
-
+model = Pipeline(
     steps=[
-
-        (
-            "preprocessor",
-            preprocessor
-        ),
-
+        ("preprocessor", preprocessor),
         (
             "knn",
-
             NearestNeighbors(
-                n_neighbors=5,
+                n_neighbors=min(5, len(df)),
                 metric="cosine"
             )
-
         )
-
     ]
-
 )
 
-
-# Train model
-
-knn_model.fit(
-    df[features]
-)
+model.fit(X)
 
 
-# =========================================================
-# STUDENT INPUT
-# =========================================================
+# ============================================================
+# NEW STUDENT DATA
+# ============================================================
 
-st.header("👨‍🎓 Student Information")
-
-
-col1, col2, col3 = st.columns(3)
-
-
-with col1:
-
-    college = st.selectbox(
-        "College",
-        sorted(df["College"].unique())
-    )
-
-    branch = st.selectbox(
-        "Branch",
-        sorted(df["Branch"].unique())
-    )
-
-    year = st.selectbox(
-        "Year",
-        sorted(df["Year"].unique())
-    )
+new_student = pd.DataFrame({
+    "College": [college],
+    "Branch": [branch],
+    "Year": [year],
+    "CGPA": [cgpa],
+    "Learning History": [learning_history],
+    "Skill Gap": [skill_gap]
+})
 
 
-with col2:
-
-    cgpa = st.number_input(
-        "CGPA",
-        min_value=0.0,
-        max_value=10.0,
-        value=7.0,
-        step=0.1
-    )
-
-    assessment = st.number_input(
-        "Assessment Score",
-        min_value=0,
-        max_value=100,
-        value=60
-    )
-
-    attendance = st.number_input(
-        "Attendance (%)",
-        min_value=0,
-        max_value=100,
-        value=80
-    )
-
-
-with col3:
-
-    study_hours = st.number_input(
-        "Available Study Hours/Day",
-        min_value=0.5,
-        max_value=12.0,
-        value=2.0,
-        step=0.5
-    )
-
-    learning_history = st.selectbox(
-        "Learning History",
-        sorted(df["Learning History"].unique())
-    )
-
-    skill_gap = st.selectbox(
-        "Current Skill Gap",
-        sorted(df["Skill Gap"].unique())
-    )
-
-
-career_goal = st.selectbox(
-    "🎯 Career Goal",
-    sorted(df["Career Goal"].unique())
-)
-
-
-requirement_type = st.selectbox(
-    "Requirement Type",
-    sorted(df["Requirement Type"].unique())
-)
-
-
-current_level = st.selectbox(
-    "Current Level",
-    sorted(df["Current Level"].unique())
-)
-
-
-# =========================================================
+# ============================================================
 # GENERATE RECOMMENDATION
-# =========================================================
+# ============================================================
 
-if st.button(
-    "🚀 Generate Personalized Learning Path",
-    use_container_width=True
-):
+if st.sidebar.button("🚀 Generate Recommendation"):
 
-    # -----------------------------------------------------
-    # CREATE NEW STUDENT
-    # -----------------------------------------------------
-
-    new_student = pd.DataFrame({
-
-        "College": [college],
-
-        "Branch": [branch],
-
-        "Year": [year],
-
-        "CGPA": [cgpa],
-
-        "Learning History": [learning_history],
-
-        "Skill Gap": [skill_gap],
-
-        "Career Goal": [career_goal],
-
-        "Assessment Score": [assessment],
-
-        "Time Available (hrs/day)": [study_hours],
-
-        "Attendance (%)": [attendance],
-
-        "Requirement Type": [requirement_type],
-
-        "Current Level": [current_level]
-
-    })
+    st.session_state["generate"] = True
 
 
-    # -----------------------------------------------------
-    # FIND SIMILAR STUDENTS
-    # -----------------------------------------------------
+# ============================================================
+# RESULTS
+# ============================================================
 
-    distances, indices = knn_model.named_steps[
+if st.session_state.get("generate", False):
+
+    st.markdown("## 🎯 Personalized Recommendation")
+
+    # Transform new student
+    new_student_transformed = model.named_steps[
+        "preprocessor"
+    ].transform(new_student)
+
+    # Get nearest students
+    distances, indices = model.named_steps[
         "knn"
-    ].kneighbors(
+    ].kneighbors(new_student_transformed)
 
-        knn_model.named_steps[
-            "preprocessor"
-        ].transform(new_student)
+    similar_students = df.iloc[indices[0]].copy()
 
-    )
-
-
-    similar_students = df.iloc[
-        indices[0]
-    ]
-
-
-    # =====================================================
-    # RECOMMENDATION SECTION
-    # =====================================================
-
-    st.success(
-        "✅ Personalized learning path generated!"
-    )
-
-
-    st.header("🎯 Your Personalized Recommendation")
-
+    # --------------------------------------------------------
+    # TOP INFORMATION
+    # --------------------------------------------------------
 
     col1, col2, col3 = st.columns(3)
 
-
     with col1:
-
-        st.info(
-            f"""
-            **Career Goal**
-
-            {career_goal}
-            """
+        st.metric(
+            "👩‍🎓 Student",
+            student_name
         )
-
 
     with col2:
-
-        st.warning(
-            f"""
-            **Skill Gap**
-
-            {skill_gap}
-            """
+        st.metric(
+            "📊 CGPA",
+            f"{cgpa:.2f}"
         )
-
 
     with col3:
-
-        st.success(
-            f"""
-            **Current Level**
-
-            {current_level}
-            """
+        st.metric(
+            "🎯 Skill Gap",
+            skill_gap
         )
 
+    st.divider()
 
-    # =====================================================
-    # FIND COMMON SKILLS
-    # =====================================================
+    # --------------------------------------------------------
+    # RECOMMENDATION LOGIC
+    # --------------------------------------------------------
 
-    skill_counts = (
-        similar_students["Skill Gap"]
-        .value_counts()
-    )
+    history_text = learning_history.lower()
+    skill_text = skill_gap.lower()
 
+    recommendations = []
 
-    common_skill = skill_counts.index[0]
+    if "machine" in skill_text or "ml" in skill_text:
+        recommendations.extend([
+            "Machine Learning Fundamentals",
+            "Supervised Learning",
+            "Unsupervised Learning",
+            "Scikit-learn"
+        ])
 
+    elif "deep" in skill_text:
+        recommendations.extend([
+            "Deep Learning",
+            "Neural Networks",
+            "TensorFlow / PyTorch",
+            "Computer Vision"
+        ])
 
-    # =====================================================
-    # COURSE RECOMMENDATION
-    # =====================================================
+    elif "python" in skill_text:
+        recommendations.extend([
+            "Python Programming",
+            "Pandas",
+            "NumPy",
+            "Data Analysis"
+        ])
 
-    career = career_goal.lower()
-    skill = skill_gap.lower()
+    elif "sql" in skill_text:
+        recommendations.extend([
+            "SQL Fundamentals",
+            "Advanced SQL",
+            "Database Management",
+            "Data Analysis"
+        ])
 
+    elif "cyber" in skill_text:
+        recommendations.extend([
+            "Cybersecurity Fundamentals",
+            "Network Security",
+            "Ethical Hacking",
+            "Information Security"
+        ])
 
-    if "data scientist" in career:
-
-        course = "Python for Data Science + Statistics + Machine Learning"
-
-        project = "Student Performance Prediction using Machine Learning"
-
-    elif "data analyst" in career:
-
-        course = "Excel + SQL + Python + Power BI"
-
-        project = "Student / Business Analytics Dashboard"
-
-    elif "ai/ml" in career or "ml engineer" in career:
-
-        course = "Python + Machine Learning + Deep Learning"
-
-        project = "Machine Learning Prediction System"
-
-    elif "cyber" in career:
-
-        course = "Networking + Linux + Cybersecurity"
-
-        project = "Network Security Monitoring System"
-
-    elif "cloud" in career:
-
-        course = "Linux + AWS/Azure + Cloud Fundamentals"
-
-        project = "Cloud Deployment Project"
-
-    elif "devops" in career:
-
-        course = "Linux + Git + Docker + CI/CD"
-
-        project = "CI/CD Automation Project"
-
-    elif "full stack" in career:
-
-        course = "HTML + CSS + JavaScript + React + Backend"
-
-        project = "Full Stack Web Application"
-
-    elif "software" in career:
-
-        course = "Programming + DSA + OOP + Git"
-
-        project = "Software Application Development"
-
-    elif "web" in career:
-
-        course = "HTML + CSS + JavaScript + React"
-
-        project = "Responsive Web Application"
-
-    elif "business analyst" in career:
-
-        course = "Excel + SQL + Business Analytics"
-
-        project = "Business Intelligence Dashboard"
-
-    elif "ui/ux" in career:
-
-        course = "UI/UX Design + Figma + User Research"
-
-        project = "Mobile/Web UI UX Case Study"
+    elif "cloud" in skill_text:
+        recommendations.extend([
+            "Cloud Computing Fundamentals",
+            "AWS / Azure",
+            "Cloud Security",
+            "DevOps Basics"
+        ])
 
     else:
+        recommendations.extend([
+            "Programming Fundamentals",
+            "Data Structures & Algorithms",
+            "Python Programming",
+            "Problem Solving"
+        ])
 
-        course = "Programming Fundamentals + Data Analysis"
+    # Remove duplicates
+    recommendations = list(dict.fromkeys(recommendations))
 
-        project = "Data Analysis Project"
-
-
-    # =====================================================
+    # --------------------------------------------------------
     # LEARNING PATH
-    # =====================================================
+    # --------------------------------------------------------
 
-    st.header("🗺️ Personalized Learning Path")
+    st.subheader("📚 Recommended Learning Path")
 
-
-    learning_path = [
-
-        (
-            "STEP 1",
-            "Foundation",
-            "Strengthen your basic concepts according to your current level."
-        ),
-
-        (
-            "STEP 2",
-            "Skill Gap",
-            f"Focus on improving: {skill_gap}"
-        ),
-
-        (
-            "STEP 3",
-            "Core Course",
-            course
-        ),
-
-        (
-            "STEP 4",
-            "Hands-on Practice",
-            "Solve coding exercises, quizzes and real-world problems."
-        ),
-
-        (
-            "STEP 5",
-            "Project",
-            project
-        ),
-
-        (
-            "STEP 6",
-            "Advanced Learning",
-            f"Learn advanced concepts related to {career_goal}."
-        ),
-
-        (
-            "STEP 7",
-            "Career Preparation",
-            "Build portfolio, GitHub projects and prepare for interviews."
-        )
-
-    ]
-
-
-    for number, title, description in learning_path:
+    for i, item in enumerate(recommendations, 1):
 
         st.markdown(
-
             f"""
-            <div class="path">
-
-            <h3>{number} — {title}</h3>
-
-            <p>{description}</p>
-
+            <div class="card">
+                <b>{i}. {item}</b>
             </div>
             """,
-
             unsafe_allow_html=True
         )
 
-
-    # =====================================================
-    # STUDY PLAN
-    # =====================================================
-
-    st.header("⏰ Personalized Study Plan")
-
-
-    daily_hours = study_hours
-
-
-    if daily_hours <= 1:
-
-        plan = {
-            "Concept Learning": "30 minutes",
-            "Practice": "20 minutes",
-            "Revision": "10 minutes"
-        }
-
-    elif daily_hours <= 2:
-
-        plan = {
-            "Concept Learning": "45 minutes",
-            "Practice": "45 minutes",
-            "Project": "20 minutes",
-            "Revision": "10 minutes"
-        }
-
-    else:
-
-        plan = {
-            "Concept Learning": "60 minutes",
-            "Practice": "60 minutes",
-            "Project": "60 minutes",
-            "Revision": "30 minutes"
-        }
-
-
-    for activity, time in plan.items():
-
-        st.write(
-            f"### 📌 {activity} — {time}"
-        )
-
-
-    # =====================================================
+    # --------------------------------------------------------
     # SIMILAR STUDENTS
-    # =====================================================
+    # --------------------------------------------------------
 
-    st.header("👥 Similar Students Found by ML")
-
+    st.subheader("👥 Similar Students")
 
     display_columns = [
-
         "Student ID",
         "Student Name",
+        "College",
         "Branch",
+        "Year",
         "CGPA",
-        "Skill Gap",
-        "Career Goal",
-        "Current Level"
-
+        "Learning History",
+        "Skill Gap"
     ]
 
+    display_columns = [
+        col for col in display_columns
+        if col in similar_students.columns
+    ]
 
     st.dataframe(
-
-        similar_students[
-            display_columns
-        ],
-
+        similar_students[display_columns],
         use_container_width=True,
-
         hide_index=True
-
     )
 
-
-    # =====================================================
+    # --------------------------------------------------------
     # ML EXPLANATION
-    # =====================================================
+    # --------------------------------------------------------
 
-    st.header("🤖 How ML Generated This Recommendation")
-
+    st.subheader("🤖 How ML Generated This Recommendation")
 
     st.write(
-        """
-        The system converts student information into numerical features
-        using One-Hot Encoding and Standard Scaling.
+        "The system converts student information into numerical "
+        "features using One-Hot Encoding and Standard Scaling."
+    )
 
-        The K-Nearest Neighbors (KNN) algorithm then compares the new
-        student's profile with existing students in the dataset.
+    st.write(
+        "The K-Nearest Neighbors (KNN) algorithm then compares "
+        "the new student's profile with existing students in the dataset."
+    )
 
-        The system identifies the most similar students and uses their
-        learning characteristics to personalize the learning direction.
-        """
+    st.write(
+        "The system identifies the most similar students and uses "
+        "their learning characteristics to personalize the learning direction."
+    )
+
+    # --------------------------------------------------------
+    # SIMILARITY SCORE
+    # --------------------------------------------------------
+
+    similarity_score = max(
+        0,
+        min(100, (1 - distances[0][0]) * 100)
+    )
+
+    st.subheader("📈 Profile Similarity")
+
+    st.progress(
+        int(similarity_score)
+    )
+
+    st.write(
+        f"Your profile is approximately **{similarity_score:.1f}% "
+        "similar** to the closest student profile in the dataset."
     )
 
 
-# =========================================================
-# DATASET
-# =========================================================
-
-with st.expander("📊 View Dataset"):
-
-    st.dataframe(
-        df,
-        use_container_width=True
-    )
-
-
-# =========================================================
-# FOOTER
-# =========================================================
+# ============================================================
+# DATASET - COLLAPSED BY DEFAULT
+# ============================================================
 
 st.divider()
 
-st.caption(
-    "Personalized Learning Recommendation System | "
-    "Machine Learning + Streamlit"
+with st.expander("📊 View Dataset", expanded=False):
+
+    st.write(
+        f"Dataset contains **{len(df)} students** "
+        f"and **{len(df.columns)} columns**."
+    )
+
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+# ============================================================
+# FOOTER
+# ============================================================
+
+st.divider()
+
+st.markdown(
+    """
+    <center>
+    🎓 <b>Personalized Learning Recommendation System</b><br>
+    Built with Python • Machine Learning • KNN • Streamlit
+    </center>
+    """,
+    unsafe_allow_html=True
 )
